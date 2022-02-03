@@ -818,8 +818,12 @@ abstract class question_edit_form extends question_wizard_form {
 
         // Category.
         if (empty($fromform['category'])) {
-            // User has provided an invalid category.
-            $errors['category'] = get_string('required');
+            if ($fromform['usecurrentcat'] !== false) {
+                $fromform['category'] = '[' . $this->categorycontext->__get('id') . ',' . $this->categorycontext->__get('instanceid') . ']';
+            } else {
+                // User has provided an invalid category.
+                $errors['category'] = get_string('required');
+            }
         }
 
         // Default mark.
