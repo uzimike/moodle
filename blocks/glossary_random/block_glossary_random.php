@@ -181,7 +181,7 @@ class block_glossary_random extends block_base {
 
         if (!empty($this->page->course->id)) {
             // First check if glossary belongs to the current course (we don't need to make any DB queries to find it).
-            $modinfo = get_fast_modinfo($this->page->course);
+            $modinfo = get_fast_modinfo($this->page->course->id);
             if (isset($modinfo->instances['glossary'][$this->config->glossary])) {
                 $this->glossarycm = $modinfo->instances['glossary'][$this->config->glossary];
                 if ($this->glossarycm->uservisible) {
