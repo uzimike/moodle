@@ -23,6 +23,7 @@
  */
 
 use mod_quiz\quiz_settings;
+use mod_quiz\access_manager;
 
 require_once(__DIR__ . '/../../config.php');
 require_once($CFG->dirroot.'/mod/quiz/lib.php');
@@ -92,6 +93,8 @@ $overrides = [];
 $colclasses = [];
 $headers = [];
 
+$accessrulesql = access_manager::get_override_settings_sql('o');
+
 // Fetch all overrides.
 if ($groupmode) {
     $headers[] = get_string('group');
@@ -99,15 +102,15 @@ if ($groupmode) {
     if ($groups) {
         $params = ['quizid' => $quiz->id];
         list($insql, $inparams) = $DB->get_in_or_equal(array_keys($groups), SQL_PARAMS_NAMED);
-        $params += $inparams;
 
-        $sql = "SELECT o.*, g.name
+        $sql = "SELECT o.*, g.name, {$accessrulesql->selects}
                   FROM {quiz_overrides} o
                   JOIN {groups} g ON o.groupid = g.id
+                    {$accessrulesql->joins}
                  WHERE o.quiz = :quizid AND g.id $insql
               ORDER BY g.name";
 
-        $overrides = $DB->get_records_sql($sql, $params);
+        $overrides = $DB->get_records_sql($sql, array_merge($params, $inparams, $accessrulesql->params));
     }
 
 } else {
@@ -142,15 +145,16 @@ if ($groupmode) {
     }
 
     $overrides = $DB->get_records_sql("
-            SELECT o.*, {$userfieldssql->selects}
+            SELECT o.*, {$userfieldssql->selects}, {$accessrulesql->selects}
               FROM {quiz_overrides} o
               JOIN {user} u ON o.userid = u.id
                   {$userfieldssql->joins}
+                  {$accessrulesql->joins}
               $groupsjoin
              WHERE o.quiz = :quizid
                $groupswhere
              ORDER BY $sort
-            ", array_merge($params, $userfieldssql->params));
+            ", array_merge($params, $userfieldssql->params, $accessrulesql->params));
 }
 
 // Initialise table.
@@ -228,6 +232,9 @@ foreach ($overrides as $override) {
         $values[] = $override->password !== '' ?
                 get_string('enabled', 'quiz') : get_string('none', 'quiz');
     }
+
+    // Access rule override table field.
+    [$fields, $values] = access_manager::add_override_table_fields($override, $fields, $values, $context);
 
     // Prepare the information about who this override applies to.
     $extranamebit = $active ? '' : '*';

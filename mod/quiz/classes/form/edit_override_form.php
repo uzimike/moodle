@@ -23,6 +23,7 @@ use mod_quiz_mod_form;
 use moodle_url;
 use moodleform;
 use stdClass;
+use mod_quiz\access_manager;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -82,6 +83,30 @@ class edit_override_form extends moodleform {
         $this->overrideid = $override->id ?? 0;
 
         parent::__construct($submiturl);
+    }
+
+    /**
+     * Return the course context for new modules, or the module context for existing modules.
+     * @return context_module
+     */
+    public function get_context() {
+        return $this->context;
+    }
+
+    /**
+     * Get the quiz override ID.
+     * @return int
+     */
+    public function get_overrideid() {
+        return $this->overrideid;
+    }
+
+    /**
+     * Get the quiz object.
+     * @return int
+     */
+    public function get_quiz() {
+        return $this->quiz;
     }
 
     protected function definition() {
@@ -224,6 +249,10 @@ class edit_override_form extends moodleform {
         $mform->addHelpButton('attempts', 'attempts', 'quiz');
         $mform->setDefault('attempts', $this->quiz->attempts);
 
+        // Access-rule fields.
+        access_manager::add_override_form_fields($this, $mform);
+        $mform->closeHeaderBefore('resetbutton');
+
         // Submit buttons.
         $mform->addElement('submit', 'resetbutton',
                 get_string('reverttodefaults', 'quiz'));
@@ -288,6 +317,9 @@ class edit_override_form extends moodleform {
                 $errors['userid'] = $errors['userid'] ?? "" . $errors['general'];
             }
         }
+
+        // Apply access-rule validation.
+        $errors = access_manager::validate_override_form_fields($errors, $data, $files, $this);
 
         return $errors;
     }

@@ -16,6 +16,7 @@
 
 namespace mod_quiz\local;
 
+use mod_quiz\access_manager;
 use mod_quiz\event\group_override_created;
 use mod_quiz\event\group_override_deleted;
 use mod_quiz\event\group_override_updated;
@@ -87,9 +88,11 @@ class override_manager {
         $errors = [];
 
         // Ensure at least one of the overrideable settings is set.
+        $accessrulerequiredkeys = access_manager::get_override_required_setting_keys();
+        $requiredkeys = array_merge(self::OVERRIDEABLE_QUIZ_SETTINGS, $accessrulerequiredkeys);
         $keysthatareset = array_map(function ($key) use ($formdata) {
             return isset($formdata->$key) && !is_null($formdata->$key);
-        }, self::OVERRIDEABLE_QUIZ_SETTINGS);
+        }, $requiredkeys);
 
         if (!in_array(true, $keysthatareset)) {
             $errors['general'][] = new \lang_string('nooverridedata', 'quiz');
@@ -207,7 +210,7 @@ class override_manager {
     }
 
     /**
-     * Parses the formdata by finding only the OVERRIDEABLE_QUIZ_SETTINGS,
+     * Parses the formdata by finding the OVERRIDEABLE_QUIZ_SETTINGS and from overridable access-rule components,
      * clearing any values that match the existing quiz, and re-adds the user or group id.
      *
      * @param array $formdata data usually from moodleform or webservice call.
@@ -216,7 +219,9 @@ class override_manager {
      */
     public function parse_formdata(array $formdata): array {
         // Get the data from the form that we want to update.
-        $settings = array_intersect_key($formdata, array_flip(self::OVERRIDEABLE_QUIZ_SETTINGS));
+        $accessrulekeys = access_manager::get_override_setting_keys();
+        $keys = array_merge(self::OVERRIDEABLE_QUIZ_SETTINGS, $accessrulekeys);
+        $settings = array_intersect_key($formdata, array_flip($keys));
 
         // Remove values that are the same as currently in the quiz.
         $settings = $this->clear_unused_values($settings);
@@ -255,6 +260,7 @@ class override_manager {
         } else {
             $id = $DB->insert_record('quiz_overrides', $datatoset);
         }
+        $datatoset['overrideid'] = $id;
 
         $userid = $datatoset['userid'] ?? null;
         $groupid = $datatoset['groupid'] ?? null;
@@ -282,6 +288,9 @@ class override_manager {
             // If is just a user, can update only their calendar event.
             quiz_update_events($this->quiz, (object) $datatoset);
         }
+
+        // Update access-rule override data.
+        access_manager::save_override_settings($datatoset);
 
         return $id;
     }
@@ -329,7 +338,6 @@ class override_manager {
 
         $this->delete_overrides($records, $shouldlog);
     }
-
 
     /**
      * Builds sql and parameters to find overrides in quiz with the given ids
@@ -390,6 +398,8 @@ class override_manager {
                 $this->fire_deleted_event($override->id, $userid, $groupid);
             }
         }
+
+        access_manager::delete_override_settings($overrides);
     }
 
     /**

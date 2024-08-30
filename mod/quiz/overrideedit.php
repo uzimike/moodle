@@ -22,6 +22,7 @@
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use mod_quiz\access_manager;
 use mod_quiz\form\edit_override_form;
 use mod_quiz\quiz_settings;
 
@@ -36,7 +37,18 @@ $reset = optional_param('reset', false, PARAM_BOOL);
 
 $override = null;
 if ($overrideid) {
-    $override = $DB->get_record('quiz_overrides', ['id' => $overrideid], '*', MUST_EXIST);
+    $params = [$overrideid];
+    $accessrulesql = access_manager::get_override_settings_sql('o');
+    $hasaccessruleoverrides = !empty($accessrulesql->selects);
+    $accessrulesqlselects = $hasaccessruleoverrides ? ", $accessrulesql->selects" : '';
+
+    $override = $DB->get_record_sql("SELECT o.*
+                                        $accessrulesqlselects
+                                       FROM {quiz_overrides} o
+                                        $accessrulesql->joins
+                                      WHERE o.id = ?",
+                                        array_merge($accessrulesql->params, $params),
+                                        MUST_EXIST);
     $quizobj = quiz_settings::create($override->quiz);
 } else {
     $quizobj = quiz_settings::create_for_cmid($cmid);

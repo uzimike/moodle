@@ -236,9 +236,21 @@ function quiz_delete_instance($id) {
  */
 function quiz_update_effective_access($quiz, $userid) {
     global $DB;
+    $accessrulesql = access_manager::get_override_settings_sql('o');
+    $hasaccessruleoverrides = !empty($accessrulesql->selects);
+    $params = ['quizid' => $quiz->id, 'userid' => $userid];
 
     // Check for user override.
-    $override = $DB->get_record('quiz_overrides', ['quiz' => $quiz->id, 'userid' => $userid]);
+    if ($hasaccessruleoverrides) {
+        $override = $DB->get_record_sql("SELECT o.*, {$accessrulesql->selects}
+                                           FROM {quiz_overrides} o
+                                            {$accessrulesql->joins}
+                                          WHERE o.quiz = :quizid
+                                            AND o.userid = :userid",
+            array_merge($accessrulesql->params, $params));
+    } else {
+        $override = $DB->get_record('quiz_overrides', $params);
+    }
 
     if (!$override) {
         $override = new stdClass();
@@ -255,10 +267,14 @@ function quiz_update_effective_access($quiz, $userid) {
     if (!empty($groupings[0])) {
         // Select all overrides that apply to the User's groups.
         list($extra, $params) = $DB->get_in_or_equal(array_values($groupings[0]));
-        $sql = "SELECT * FROM {quiz_overrides}
-                WHERE groupid $extra AND quiz = ?";
+        $accessrulesqlselects = $hasaccessruleoverrides ? ", $accessrulesql->selects" : '';
+        $sql = "SELECT o.*$accessrulesqlselects
+                  FROM {quiz_overrides} o
+                    {$accessrulesql->joins}
+                 WHERE groupid $extra
+                   AND quiz = ?";
         $params[] = $quiz->id;
-        $records = $DB->get_records_sql($sql, $params);
+        $records = $DB->get_records_sql($sql, array_merge($accessrulesql->params, $params));
 
         // Combine the overrides.
         $opens = [];
@@ -319,7 +335,8 @@ function quiz_update_effective_access($quiz, $userid) {
     }
 
     // Merge with quiz defaults.
-    $keys = ['timeopen', 'timeclose', 'timelimit', 'attempts', 'password', 'extrapasswords'];
+    $accessrulekeys = access_manager::get_override_setting_keys();
+    $keys = ['timeopen', 'timeclose', 'timelimit', 'attempts', 'password', 'extrapasswords', ...$accessrulekeys];
     foreach ($keys as $key) {
         if (isset($override->{$key})) {
             $quiz->{$key} = $override->{$key};
@@ -392,6 +409,53 @@ function quiz_get_best_grade($quiz, $userid) {
  */
 function quiz_has_grades($quiz) {
     return $quiz->grade >= grade_calculator::ALMOST_ZERO && $quiz->sumgrades >= grade_calculator::ALMOST_ZERO;
+}
+
+/**
+ * Checks if the user has overrides for the quiz whether individually or in a group.
+ *
+ * @param int $quizid The quiz object.
+ * @return stdClass|false
+ */
+function get_quiz_override($quizid) {
+    global $DB, $USER;
+    $userid = $USER->id;
+
+    $quiz = $DB->get_record('quiz', ['id' => $quizid]);
+
+    // No quiz, no override.
+    if (!$quiz) {
+        return false;
+    }
+
+    // Check for user override.
+    $params = ['quizid' => $quiz->id, 'userid' => $userid];
+    $accessrulesql = access_manager::get_override_settings_sql('o');
+    $accessrulesqlselects = $accessrulesql->selects ? ", {$accessrulesql->selects}" : '';
+    $sql = "SELECT o.*$accessrulesqlselects
+              FROM {quiz_overrides} o {$accessrulesql->joins}
+             WHERE o.quiz = :quizid
+               AND o.userid = :userid";
+    $params = array_merge($accessrulesql->params, $params);
+    $useroverride = $DB->get_record_sql($sql, $params);
+    if ($useroverride) {
+        return $useroverride;
+    }
+
+    // Check for group overrides.
+    $groupings = groups_get_user_groups($quiz->course, $userid);
+    if (!empty($groupings[0])) {
+        list($extra, $params) = $DB->get_in_or_equal(array_values($groupings[0]));
+        $sql = "SELECT o.*$accessrulesqlselects
+                  FROM {quiz_overrides} o
+                  {$accessrulesql->joins}
+                WHERE groupid $extra AND quiz = ?";
+        $params[] = $quiz->id;
+
+        return $DB->get_record_sql($sql, array_merge($accessrulesql->params, $params));
+    }
+
+    return false;
 }
 
 /**
