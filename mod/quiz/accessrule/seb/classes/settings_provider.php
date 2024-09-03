@@ -188,16 +188,18 @@ class settings_provider {
      * @param \MoodleQuickForm $mform the wrapped MoodleQuickForm.
      */
     protected static function add_seb_usage_options(\mod_quiz_mod_form $quizform, \MoodleQuickForm $mform) {
+        $options = self::get_requiresafeexambrowser_options($quizform->get_context());
         $element = $mform->createElement(
             'select',
             'seb_requiresafeexambrowser',
             get_string('seb_requiresafeexambrowser', 'quizaccess_seb'),
-            self::get_requiresafeexambrowser_options($quizform->get_context())
+            self::get_requiresafeexambrowser_options($quizform->get_context()),
+            $options
         );
 
         self::insert_element($quizform, $mform, $element);
         self::set_type($quizform, $mform, 'seb_requiresafeexambrowser', PARAM_INT);
-        self::set_default($quizform, $mform, 'seb_requiresafeexambrowser', self::USE_SEB_NO);
+        self::set_default($quizform, $mform, 'seb_requiresafeexambrowser', array_key_first($options));
         self::add_help_button($quizform, $mform, 'seb_requiresafeexambrowser');
 
         if (self::is_conflicting_permissions($quizform->get_context())) {
@@ -549,6 +551,11 @@ class settings_provider {
             return true;
         }
 
+        if (!self::can_donotrequire($context) &&
+                $settings->get('requiresafeexambrowser') == self::USE_SEB_NO) {
+            return true;
+        }
+
         return false;
     }
 
@@ -559,7 +566,11 @@ class settings_provider {
      * @return array
      */
     public static function get_requiresafeexambrowser_options(\context $context): array {
-        $options[self::USE_SEB_NO] = get_string('no');
+        $options = [];
+
+        if (self::can_donotrequire($context) || self::is_conflicting_permissions($context)) {
+            $options[self::USE_SEB_NO] = get_string('no');
+        }
 
         if (self::can_configure_manually($context) || self::is_conflicting_permissions($context)) {
             $options[self::USE_SEB_CONFIG_MANUALLY] = get_string('seb_use_manually', 'quizaccess_seb');
@@ -584,7 +595,7 @@ class settings_provider {
      * Returns a list of templates.
      * @return array
      */
-    protected static function get_template_options(): array {
+    public static function get_template_options(): array {
         $templates = [];
         $records = template::get_records(['enabled' => 1], 'name');
         if ($records) {
@@ -799,6 +810,26 @@ class settings_provider {
         }
 
         return false;
+    }
+
+    /**
+     * Check if the current user can not require SEB for a quiz.
+     *
+     * @param \context $context Context to check access in.
+     * @return bool
+     */
+    public static function can_donotrequire(\context $context): bool {
+        return has_capability('quizaccess/seb:manage_seb_donotrequiresafeexambrowser', $context);
+    }
+
+    /**
+     * Check if the current user can not require SEB for a quiz in the override menu.
+     *
+     * @param \context $context Context to check access in.
+     * @return bool
+     */
+    public static function can_override_donotrequire(\context $context): bool {
+        return has_capability('quizaccess/seb:override_seb_donotrequiresafeexambrowser', $context);
     }
 
     /**

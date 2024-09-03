@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+use mod_quiz\form\edit_override_form;
 use mod_quiz\local\access_rule_base;
 use mod_quiz\quiz_attempt;
 use quizaccess_seb\seb_access_manager;
@@ -264,6 +265,426 @@ class quizaccess_seb extends access_rule_base {
                 . 'LEFT JOIN {quizaccess_seb_template} sebtemplate ON seb.templateid = sebtemplate.id '
                 , []
         ];
+    }
+
+    /**
+     * Fetches the best suited default value for a field. If there is an override value set, use this.
+     * If there's no override value, check if the quiz had SEB settings and use this value instead.
+     * Otherwise, use the default value defined.
+     * 
+     * @param string $field The field key to search $default and $override.
+     * @param string $default The default form value.
+     * @param \stdClass $override The override data object.
+     * @param \stdClass $quiz The quiz data object.
+     * @param boolean $removeprefix Remove 'seb_' from the field key.
+     * @return string
+     */
+    private static function get_override_default_field($field, $default, $override, $quiz, $removeprefix = false) {
+        if ($removeprefix) {
+            $field = substr($field, 4);
+        }
+        return match(true) {
+            isset($override->field) => $override->field,
+            isset($quiz->$field)    => $quiz->$field,
+            default                 => $default,
+        };
+    }
+
+    /**
+     * Add fields to the quiz override form.
+     *
+     * @param edit_override_form $quizform the quiz override settings form being built.
+     * @param MoodleQuickForm $mform the wrapped MoodleQuickForm.
+     * @return void
+     */
+    public static function add_override_form_fields(
+        edit_override_form $quizform, MoodleQuickForm $mform) {
+        global $DB;
+        $override = $DB->get_record('quizaccess_seb_override', ['overrideid' => $quizform->get_overrideid()]);
+        $context = $quizform->get_context();
+        $quiz = $quizform->get_quiz();
+
+        $mform->addElement('header', 'seb', get_string('seb', 'quizaccess_seb'));
+
+        $mform->addElement('checkbox', 'seb_enabled', get_string('enabled', 'quizaccess_seb'));
+        $mform->setDefault('seb_enabled', self::get_override_default_field('enabled', false, $override, $quiz));
+
+        // ... "Require the use of Safe Exam Browser"
+        if (settings_provider::can_override_donotrequire($context)) {
+            $requireseboptions[settings_provider::USE_SEB_NO] = get_string('no');
+        }
+
+        if (settings_provider::can_configure_manually($context)
+            || settings_provider::is_conflicting_permissions($context)) {
+            $requireseboptions[settings_provider::USE_SEB_CONFIG_MANUALLY] = get_string('seb_use_manually', 'quizaccess_seb');
+        }
+
+        if (settings_provider::can_use_seb_template($context)
+            || settings_provider::is_conflicting_permissions($context)) {
+            if (!empty(settings_provider::get_template_options())) {
+                $requireseboptions[settings_provider::USE_SEB_TEMPLATE] = get_string('seb_use_template', 'quizaccess_seb');
+            }
+        }
+
+        $requireseboptions[settings_provider::USE_SEB_CLIENT_CONFIG] = get_string('seb_use_client', 'quizaccess_seb');
+
+        $mform->addElement(
+            'select',
+            'seb_requiresafeexambrowser',
+            get_string('seb_requiresafeexambrowser', 'quizaccess_seb'),
+            $requireseboptions
+        );
+
+        $mform->setType('seb_requiresafeexambrowser', PARAM_INT);
+        $mform->setDefault(
+            'seb_requiresafeexambrowser',
+            self::get_override_default_field('requiresafeexambrowser', 0, $override, $quiz)
+        );
+        $mform->addHelpButton('seb_requiresafeexambrowser', 'seb_requiresafeexambrowser', 'quizaccess_seb');
+        $mform->disabledIf('seb_requiresafeexambrowser', 'enableseboverride');
+
+        if (settings_provider::is_conflicting_permissions($context)) {
+            $mform->freeze('seb_requiresafeexambrowser');
+        }
+
+        // ... "Safe Exam Browser config template"
+        if (settings_provider::can_use_seb_template($context) ||
+            settings_provider::is_conflicting_permissions($context)) {
+            $element = $mform->addElement(
+                'select',
+                'seb_templateid',
+                get_string('seb_templateid', 'quizaccess_seb'),
+                settings_provider::get_template_options()
+            );
+        } else {
+            $element = $mform->addElement('hidden', 'seb_templateid');
+        }
+
+        $mform->setType('seb_templateid', PARAM_INT);
+        $mform->setDefault('seb_templateid', self::get_override_default_field('templateid', 0, $override, $quiz));
+        $mform->addHelpButton('seb_templateid', 'seb_templateid', 'quizaccess_seb');
+        $mform->disabledIf('seb_templateid', 'enableseboverride');
+
+        if (settings_provider::is_conflicting_permissions($context)) {
+            $mform->freeze('seb_templateid');
+        }
+
+        // ... "Show Safe Exam browser download button"
+        if (settings_provider::can_change_seb_showsebdownloadlink($context)) {
+            $mform->addElement('selectyesno',
+                'seb_showsebdownloadlink',
+                get_string('seb_showsebdownloadlink', 'quizaccess_seb')
+            );
+
+            $mform->setType('seb_showsebdownloadlink', PARAM_BOOL);
+            $mform->setDefault('seb_showsebdownloadlink',
+                self::get_override_default_field('showsebdownloadlink', 1, $override, $quiz));
+            $mform->addHelpButton('seb_showsebdownloadlink', 'seb_showsebdownloadlink', 'quizaccess_seb');
+            $mform->disabledIf('seb_showsebdownloadlink', 'enableseboverride');
+        }
+
+        // Manual config elements.
+        $defaults = settings_provider::get_seb_config_element_defaults();
+        $types = settings_provider::get_seb_config_element_types();
+
+        foreach (settings_provider::get_seb_config_elements() as $name => $type) {
+            if (!settings_provider::can_manage_seb_config_setting($name, $context)) {
+                $type = 'hidden';
+            }
+
+            $mform->addElement($type, $name, get_string($name, 'quizaccess_seb'));
+
+            $mform->addHelpButton($name, $name, 'quizaccess_seb');
+            $mform->setType('seb_showsebdownloadlink', PARAM_BOOL);
+            $mform->setDefault('seb_showsebdownloadlink',
+                self::get_override_default_field('showsebdownloadlink', 1, $override, $quiz));
+            $mform->disabledIf($name, 'enableseboverride');
+
+            if (isset($defaults[$name])) {
+                $mform->setDefault($name,
+                    self::get_override_default_field($name, $defaults[$name], $override, $quiz, true));
+            }
+
+            if (isset($types[$name])) {
+                $mform->setType($name, $types[$name]);
+            }
+        }
+
+        if (settings_provider::can_change_seb_allowedbrowserexamkeys($context)) {
+            $mform->addElement('textarea',
+                'seb_allowedbrowserexamkeys',
+                get_string('seb_allowedbrowserexamkeys', 'quizaccess_seb')
+            );
+
+            $mform->setType('seb_allowedbrowserexamkeys', PARAM_RAW);
+            $mform->setDefault('seb_allowedbrowserexamkeys',
+                self::get_override_default_field('allowedbrowserexamkeys', '', $override, $quiz));
+            $mform->addHelpButton('seb_allowedbrowserexamkeys', 'seb_allowedbrowserexamkeys', 'quizaccess_seb');
+            $mform->disabledIf('seb_allowedbrowserexamkeys', 'enableseboverride');
+        }
+
+        // Hideifs.
+        foreach (settings_provider::get_quiz_hideifs() as $elname => $rules) {
+            if ($mform->elementExists($elname)) {
+                foreach ($rules as $hideif) {
+                    $mform->hideIf(
+                        $hideif->get_element(),
+                        $hideif->get_dependantname(),
+                        $hideif->get_condition(),
+                        $hideif->get_dependantvalue()
+                    );
+                }
+            }
+        }
+
+        // Lock elements.
+        if (settings_provider::is_conflicting_permissions($context)) {
+            // Freeze common quiz settings.
+            $mform->addElement('enableseboverride');
+            $mform->freeze('seb_requiresafeexambrowser');
+            $mform->freeze('seb_templateid');
+            $mform->freeze('seb_showsebdownloadlink');
+            $mform->freeze('seb_allowedbrowserexamkeys');
+
+            $quizsettings = seb_quiz_settings::get_by_quiz_id((int) $this->quiz->id);
+
+            // Remove template ID if not using template for this quiz.
+            if (empty($quizsettings) || $quizsettings->get('requiresafeexambrowser') != settings_provider::USE_SEB_TEMPLATE) {
+                $mform->removeElement('seb_templateid');
+            }
+
+            // Freeze all SEB specific settings.
+            foreach (settings_provider::get_seb_config_elements() as $element => $type) {
+                if ($mform->elementExists($element)) {
+                    $mform->freeze($element);
+                }
+            }
+        }
+    }
+
+
+    /**
+     * Validate the data from any form fields added using {@see add_override_form_fields()}.
+     *
+     * @param array $errors the errors found so far.
+     * @param array $data the submitted form data.
+     * @param array $files information about any uploaded files.
+     * @param edit_override_form $quizform the quiz override form object.
+     * @return array $errors the updated $errors array.
+     */
+    public static function validate_override_form_fields(array $errors,
+            array $data, $files, edit_override_form $quizform) {
+        $context = $quizform->get_context();
+        $cmid = $context->instanceid;
+        $quizid = get_module_from_cmid($cmid)[0]->id;
+
+        if (!settings_provider::can_configure_seb($context)) {
+            return $errors;
+        }
+
+        if (settings_provider::is_seb_settings_locked($quizid)) {
+            return $errors;
+        }
+
+        if (settings_provider::is_conflicting_permissions($context)) {
+            return $errors;
+        }
+
+        $settings = settings_provider::filter_plugin_settings((object) $data);
+
+        // Validate basic settings using persistent class.
+        $quizsettings = (new seb_quiz_settings())->from_record($settings);
+        $quizsettings->set('cmid', $cmid);
+        $quizsettings->set('quizid', $quizid);
+
+        // Edge case for filemanager_sebconfig.
+        if ($quizsettings->get('requiresafeexambrowser') == settings_provider::USE_SEB_UPLOAD_CONFIG) {
+            $errorvalidatefile = settings_provider::validate_draftarea_configfile($data['filemanager_sebconfigfile']);
+            if (!empty($errorvalidatefile)) {
+                $errors['filemanager_sebconfigfile'] = $errorvalidatefile;
+            }
+        }
+
+        // Edge case to force user to select a template.
+        if ($quizsettings->get('requiresafeexambrowser') == settings_provider::USE_SEB_TEMPLATE) {
+            if (empty($data['seb_templateid'])) {
+                $errors['seb_templateid'] = get_string('invalidtemplate', 'quizaccess_seb');
+            }
+        }
+
+        if ($quizsettings->get('requiresafeexambrowser') != settings_provider::USE_SEB_NO) {
+            // Global settings may be active which require a quiz password to be set if using SEB.
+            if (!empty(get_config('quizaccess_seb', 'quizpasswordrequired')) && empty($data['quizpassword'])) {
+                $errors['quizpassword'] = get_string('passwordnotset', 'quizaccess_seb');
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Save any submitted settings when the quiz override settings form is submitted.
+     *
+     * @param array $override data from the override form.
+     * @return void
+     */
+    public static function save_override_settings($override) {
+        global $DB, $USER;
+
+        $defaults = [
+            'seb_templateid' => 0,
+            'seb_allowedbrowserexamkeys' => '',
+            'seb_showsebdownloadlink' => 1,
+        ];
+        $defaults += settings_provider::get_seb_config_element_defaults();
+
+        foreach ($defaults as $key => $default) {
+            if (!isset($override[$key])) {
+                $override[$key] = $default;
+            }
+        }
+
+        $seboverride = (object)[
+            'overrideid'             => $override['overrideid'],
+            'enabled'                => $override['seb_enabled'],
+            'templateid'             => $override['seb_templateid'],
+            'requiresafeexambrowser' => $override['seb_requiresafeexambrowser'],
+            'showsebtaskbar'         => $override['seb_showsebtaskbar'],
+            'showwificontrol'        => $override['seb_showwificontrol'],
+            'showreloadbutton'       => $override['seb_showreloadbutton'],
+            'showtime'               => $override['seb_showtime'],
+            'showkeyboardlayout'     => $override['seb_showkeyboardlayout'],
+            'allowuserquitseb'       => $override['seb_allowuserquitseb'],
+            'quitpassword'           => $override['seb_quitpassword'],
+            'linkquitseb'            => $override['seb_linkquitseb'],
+            'userconfirmquit'        => $override['seb_userconfirmquit'],
+            'enableaudiocontrol'     => $override['seb_enableaudiocontrol'],
+            'muteonstartup'          => $override['seb_muteonstartup'],
+            'allowspellchecking'     => $override['seb_allowspellchecking'],
+            'allowreloadinexam'      => $override['seb_allowreloadinexam'],
+            'activateurlfiltering'   => $override['seb_activateurlfiltering'],
+            'filterembeddedcontent'  => $override['seb_filterembeddedcontent'],
+            'expressionsallowed'     => $override['seb_expressionsallowed'],
+            'regexallowed'           => $override['seb_regexallowed'],
+            'expressionsblocked'     => $override['seb_expressionsblocked'],
+            'regexblocked'           => $override['seb_regexblocked'],
+            'allowedbrowserexamkeys' => $override['seb_allowedbrowserexamkeys'],
+            'showsebdownloadlink'    => $override['seb_showsebdownloadlink'],
+            'usermodified'           => $USER->id,
+            'timemodified'           => time(),
+        ];
+
+        if ($seboverrideid = $DB->get_field('quizaccess_seb_override', 'id', ['overrideid' => $override['overrideid']])) {
+            $seboverride->id = $seboverrideid;
+            $DB->update_record('quizaccess_seb_override', $seboverride);
+        } else {
+            $seboverride->timecreated = time();
+            $DB->insert_record('quizaccess_seb_override', $seboverride);
+        }
+    }
+
+    /**
+     * Delete any rule-specific override settings when the quiz override is deleted.
+     *
+     * @param array $overrides an array of override objects to be deleted.
+     * @return void
+     */
+    public static function delete_override_settings($overrides) {
+        global $DB;
+        $ids = array_column($overrides, 'id');
+        list($insql, $inparams) = $DB->get_in_or_equal($ids);
+        $DB->delete_records_select('quizaccess_seb_override', "id $insql", $inparams);
+
+        foreach ($overrides as $override) {
+            $key = "{$override->quiz}-{$override->id}";
+            seb_quiz_settings::delete_cache($key);
+        }
+    }
+
+    /**
+     * Provide form field keys in the override form as a string array
+     * e.g. ['rule_enabled', 'rule_password'].
+     *
+     * @return array
+     */
+    public static function get_override_setting_keys() {
+        return [
+            'seb_enabled',
+            'seb_templateid',
+            'seb_requiresafeexambrowser',
+            'seb_showsebtaskbar',
+            'seb_showwificontrol',
+            'seb_showreloadbutton',
+            'seb_showtime',
+            'seb_showkeyboardlayout',
+            'seb_allowuserquitseb',
+            'seb_quitpassword',
+            'seb_linkquitseb',
+            'seb_userconfirmquit',
+            'seb_enableaudiocontrol',
+            'seb_muteonstartup',
+            'seb_allowspellchecking',
+            'seb_allowreloadinexam',
+            'seb_activateurlfiltering',
+            'seb_filterembeddedcontent',
+            'seb_expressionsallowed',
+            'seb_regexallowed',
+            'seb_expressionsblocked',
+            'seb_regexblocked',
+            'seb_allowedbrowserexamkeys',
+            'seb_showsebdownloadlink',
+        ];
+    }
+
+    /**
+     * Provide required form field keys in the override form as a string array
+     * e.g. ['rule_enabled'].
+     *
+     * @return array
+     */
+    public static function get_override_required_setting_keys() {
+        return ['seb_enabled'];
+    }
+
+    /**
+     * Get components of the SQL query to fetch the access rule components' override
+     * settings. To be used as part of a quiz_override query to reference.
+     *
+     * @param string $overridetablename Name of the table to reference for joins.
+     * @return array 'selects', 'joins' and 'params'.
+     */
+    public static function get_override_settings_sql($overridetablename) {
+        return [
+            'seb.enabled seb_enabled,seb.templateid seb_templateid,seb.requiresafeexambrowser seb_requiresafeexambrowser,
+                seb.showsebtaskbar seb_showsebtaskbar,seb.showwificontrol seb_showwificontrol,
+                seb.showreloadbutton seb_showreloadbutton,seb.showtime seb_showtime,seb.showkeyboardlayout seb_showkeyboardlayout,
+                seb.allowuserquitseb seb_allowuserquitseb,seb.quitpassword seb_quitpassword,seb.linkquitseb seb_linkquitseb,
+                seb.userconfirmquit seb_userconfirmquit,seb.enableaudiocontrol seb_enableaudiocontrol,
+                seb.muteonstartup seb_muteonstartup,seb.allowspellchecking seb_allowspellchecking,
+                seb.allowreloadinexam seb_allowreloadinexam,seb.activateurlfiltering seb_activateurlfiltering,
+                seb.filterembeddedcontent seb_filterembeddedcontent,seb.expressionsallowed seb_expressionsallowed,
+                seb.regexallowed seb_regexallowed,seb.expressionsblocked seb_expressionsblocked,seb.regexblocked seb_regexblocked,
+                seb.allowedbrowserexamkeys seb_allowedbrowserexamkeys,seb.showsebdownloadlink seb_showsebdownloadlink',
+            "JOIN {quizaccess_seb_override} seb ON seb.overrideid = $overridetablename.id",
+            [],
+        ];
+    }
+
+    /**
+     * Update fields and values of the override table using the override settings.
+     *
+     * @param object $override the override data to use to update the $fields and $values.
+     * @param array $fields the fields to populate.
+     * @param array $values the fields to populate.
+     * @param context $context the context of which the override is being applied to.
+     * @return array
+     */
+    public static function add_override_table_fields($override, $fields, $values, $context) {
+        if (isset($override->seb_enabled) && !empty($override->seb_enabled)) {
+            $fields[] = get_string('seb_requiresafeexambrowser', 'quizaccess_seb');
+            $values[] = settings_provider::get_requiresafeexambrowser_options($context)[$override->seb_requiresafeexambrowser];
+        }
+        return [$fields, $values];
     }
 
     /**
