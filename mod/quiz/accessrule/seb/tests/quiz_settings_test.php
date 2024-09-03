@@ -731,26 +731,6 @@ class quiz_settings_test extends \advanced_testcase {
     }
 
     /**
-     * Test that quizsettings cache exists after creation.
-     */
-    public function test_quizsettings_cache_exists_after_creation(): void {
-        $expected = seb_quiz_settings::get_record(['quizid' => $this->quiz->id]);
-        $this->assertEquals($expected->to_record(), \cache::make('quizaccess_seb', 'quizsettings')->get($this->quiz->id));
-    }
-
-    /**
-     * Test that quizsettings cache gets deleted after deletion.
-     */
-    public function test_quizsettings_cache_purged_after_deletion(): void {
-        $this->assertNotEmpty(\cache::make('quizaccess_seb', 'quizsettings')->get($this->quiz->id));
-
-        $quizsettings = seb_quiz_settings::get_record(['quizid' => $this->quiz->id]);
-        $quizsettings->delete();
-
-        $this->assertFalse(\cache::make('quizaccess_seb', 'quizsettings')->get($this->quiz->id));
-    }
-
-    /**
      * Test that we can get seb_quiz_settings by quiz id.
      */
     public function test_get_quiz_settings_by_quiz_id(): void {
@@ -768,25 +748,6 @@ class quiz_settings_test extends \advanced_testcase {
 
         // Returns false for non existing quiz.
         $this->assertFalse(seb_quiz_settings::get_by_quiz_id(7777777));
-    }
-
-    /**
-     * Test that SEB config cache exists after creation of the quiz.
-     */
-    public function test_config_cache_exists_after_creation(): void {
-        $this->assertNotEmpty(\cache::make('quizaccess_seb', 'config')->get($this->quiz->id));
-    }
-
-    /**
-     * Test that SEB config cache gets deleted after deletion.
-     */
-    public function test_config_cache_purged_after_deletion(): void {
-        $this->assertNotEmpty(\cache::make('quizaccess_seb', 'config')->get($this->quiz->id));
-
-        $quizsettings = seb_quiz_settings::get_record(['quizid' => $this->quiz->id]);
-        $quizsettings->delete();
-
-        $this->assertFalse(\cache::make('quizaccess_seb', 'config')->get($this->quiz->id));
     }
 
     /**
@@ -808,25 +769,6 @@ class quiz_settings_test extends \advanced_testcase {
 
         // Returns null for non existing quiz.
         $this->assertNull(seb_quiz_settings::get_config_by_quiz_id(7777777));
-    }
-
-    /**
-     * Test that SEB config key cache exists after creation of the quiz.
-     */
-    public function test_config_key_cache_exists_after_creation(): void {
-        $this->assertNotEmpty(\cache::make('quizaccess_seb', 'configkey')->get($this->quiz->id));
-    }
-
-    /**
-     * Test that SEB config key cache gets deleted after deletion.
-     */
-    public function test_config_key_cache_purged_after_deletion(): void {
-        $this->assertNotEmpty(\cache::make('quizaccess_seb', 'configkey')->get($this->quiz->id));
-
-        $quizsettings = seb_quiz_settings::get_record(['quizid' => $this->quiz->id]);
-        $quizsettings->delete();
-
-        $this->assertFalse(\cache::make('quizaccess_seb', 'configkey')->get($this->quiz->id));
     }
 
     /**

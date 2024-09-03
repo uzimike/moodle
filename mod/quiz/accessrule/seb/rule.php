@@ -581,6 +581,10 @@ class quizaccess_seb extends access_rule_base {
             $seboverride->timecreated = time();
             $DB->insert_record('quizaccess_seb_override', $seboverride);
         }
+
+        // Delete cache.
+        $quizid = $DB->get_field('quiz_overrides', 'quiz', ['id' => $override['overrideid']]);
+        seb_quiz_settings::delete_cache("$quizid-{$override['overrideid']}");
     }
 
     /**
