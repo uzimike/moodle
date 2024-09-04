@@ -333,12 +333,13 @@ class access_manager {
     /**
      * Delete any rule-specific override settings when the quiz override is deleted.
      *
+     * @param int $quizid all overrides being deleted should belong to the same quiz.
      * @param array $overrides an array of override objects to be deleted.
      * @return void
      */
-    public static function delete_override_settings($overrides) {
+    public static function delete_override_settings($quizid, $overrides) {
         foreach (self::get_rule_classes() as $rule) {
-            $rule::delete_override_settings($overrides);
+            $rule::delete_override_settings($quizid, $overrides);
         }
     }
 

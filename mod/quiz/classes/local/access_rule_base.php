@@ -394,10 +394,11 @@ abstract class access_rule_base {
     /**
      * Delete any rule-specific override settings when the quiz override is deleted.
      *
+     * @param int $quizid all overrides being deleted should belong to the same quiz.
      * @param array $overrides an array of override objects to be deleted.
      * @return void
      */
-    public static function delete_override_settings($overrides) {
+    public static function delete_override_settings($quizid, $overrides) {
         // By default do nothing.
     }
 

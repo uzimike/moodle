@@ -399,7 +399,7 @@ class override_manager {
             }
         }
 
-        access_manager::delete_override_settings($overrides);
+        access_manager::delete_override_settings($this->quiz->id, $overrides);
     }
 
     /**

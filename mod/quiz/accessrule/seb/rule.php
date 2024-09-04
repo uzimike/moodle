@@ -532,6 +532,8 @@ class quizaccess_seb extends access_rule_base {
         global $DB, $USER;
 
         $defaults = [
+            'seb_enabled' => 0,
+            'seb_requiresafeexambrowser' => 0,
             'seb_templateid' => 0,
             'seb_allowedbrowserexamkeys' => '',
             'seb_showsebdownloadlink' => 1,
@@ -590,17 +592,18 @@ class quizaccess_seb extends access_rule_base {
     /**
      * Delete any rule-specific override settings when the quiz override is deleted.
      *
+     * @param int $quizid all overrides being deleted should belong to the same quiz.
      * @param array $overrides an array of override objects to be deleted.
      * @return void
      */
-    public static function delete_override_settings($overrides) {
+    public static function delete_override_settings($quizid, $overrides) {
         global $DB;
         $ids = array_column($overrides, 'id');
         list($insql, $inparams) = $DB->get_in_or_equal($ids);
         $DB->delete_records_select('quizaccess_seb_override', "id $insql", $inparams);
 
         foreach ($overrides as $override) {
-            $key = "{$override->quiz}-{$override->id}";
+            $key = "{$quizid}-{$override->id}";
             seb_quiz_settings::delete_cache($key);
         }
     }
