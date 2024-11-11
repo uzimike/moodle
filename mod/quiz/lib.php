@@ -236,9 +236,20 @@ function quiz_delete_instance($id) {
  */
 function quiz_update_effective_access($quiz, $userid) {
     global $DB;
+    [$selects, $joins, $params] = access_manager::get_override_settings_sql('o');
+    $hasaccessruleoverrides = !empty($selects);
 
     // Check for user override.
-    $override = $DB->get_record('quiz_overrides', ['quiz' => $quiz->id, 'userid' => $userid]);
+    if ($hasaccessruleoverrides) {
+        $sql = "SELECT o.*, {$selects}
+                  FROM {quiz_overrides} o
+                       {$joins}
+                 WHERE o.quiz = ?
+                   AND o.userid = ?";
+        $override = $DB->get_record_sql($sql, array_merge($params, [$quiz->id, $userid]));
+    } else {
+        $override = $DB->get_record('quiz_overrides', ['quiz' => $quiz->id, 'userid' => $userid]);
+    }
 
     if (!$override) {
         $override = new stdClass();
@@ -254,9 +265,13 @@ function quiz_update_effective_access($quiz, $userid) {
 
     if (!empty($groupings[0])) {
         // Select all overrides that apply to the User's groups.
-        list($extra, $params) = $DB->get_in_or_equal(array_values($groupings[0]));
-        $sql = "SELECT * FROM {quiz_overrides}
-                WHERE groupid $extra AND quiz = ?";
+        [$extra, $params] = $DB->get_in_or_equal(array_values($groupings[0]));
+        $accessrulesqlselects = $hasaccessruleoverrides ? ", $selects" : '';
+        $sql = "SELECT o.*{$accessrulesqlselects}
+                  FROM {quiz_overrides} o
+                       {$joins}
+                 WHERE groupid {$extra}
+                   AND quiz = ?";
         $params[] = $quiz->id;
         $records = $DB->get_records_sql($sql, $params);
 
@@ -319,7 +334,8 @@ function quiz_update_effective_access($quiz, $userid) {
     }
 
     // Merge with quiz defaults.
-    $keys = ['timeopen', 'timeclose', 'timelimit', 'attempts', 'password', 'extrapasswords'];
+    $accessrulekeys = access_manager::get_override_setting_keys();
+    $keys = ['timeopen', 'timeclose', 'timelimit', 'attempts', 'password', 'extrapasswords', ...$accessrulekeys];
     foreach ($keys as $key) {
         if (isset($override->{$key})) {
             $quiz->{$key} = $override->{$key};
