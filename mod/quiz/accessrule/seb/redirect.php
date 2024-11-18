@@ -15,17 +15,34 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for the quizaccess_seb plugin.
+ * TODO describe file redirect
  *
  * @package    quizaccess_seb
- * @author     Andrew Madden <andrewmadden@catalyst-au.net>
- * @copyright  2019 Catalyst IT
+ * @copyright  2024 Michael Kotlyar <michael.kotlyar@catalyst-eu.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
+require('../../../../config.php');
 
-$plugin->version = 2024110700;
-$plugin->requires = 2024100100;
-$plugin->component = 'quizaccess_seb';
-$plugin->maturity = MATURITY_STABLE;
+use \quizaccess_seb\continue_session;
+
+$key = required_param('key', PARAM_TEXT);
+$userid = required_param('userid', PARAM_INT);
+$wantsurl = required_param('wantsurl', PARAM_TEXT);
+
+// Validate the URL.
+if (!filter_var($wantsurl, FILTER_VALIDATE_URL)) {
+    header("Location: {$CFG->wwwroot}");
+    exit;
+}
+
+// Ensure the domain matches the Moodle domain.
+$domain = parse_url($wantsurl, PHP_URL_HOST);
+$mydomain = parse_url($CFG->wwwroot, PHP_URL_HOST);;
+if ($domain != $mydomain) {
+    header("Location: {$CFG->wwwroot}");
+    exit;
+}
+
+// Verify and login.
+continue_session::handle_sessionkey($key, $userid, $wantsurl);
