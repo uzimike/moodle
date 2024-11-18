@@ -547,7 +547,18 @@ class quizaccess_seb extends access_rule_base {
      */
     private function get_launch_seb_button(): string {
         // Rendering as a href and not as button in a form to circumvent browser warnings for sending to URL with unknown protocol.
-        $seblink = \quizaccess_seb\link_generator::get_link($this->quiz->cmid, true, is_https());
+        $continuesession = get_config('quizaccess_seb', 'continuesessionwhenlaunchseb');
+        if ($continuesession) {
+            global $USER;
+            $key = \quizaccess_seb\continue_session::create_sessionkey($USER->id, $this->quiz->cmid);
+            $seblink = new moodle_url(
+                '/mod/quiz/accessrule/seb/redirect.php',
+                ['key' => $key, 'userid' => $USER->id, 'cmid' => $this->quiz->cmid],
+            );
+            $seblink->set_scheme('sebs');
+        } else {
+            $seblink = \quizaccess_seb\link_generator::get_link($this->quiz->cmid, false, is_https());
+        }
 
         $buttonlink = html_writer::start_tag('div', ['class' => 'singlebutton']);
         $buttonlink .= html_writer::link($seblink, get_string('seblinkbutton', 'quizaccess_seb'),

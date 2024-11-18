@@ -15,17 +15,27 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for the quizaccess_seb plugin.
+ * TODO describe file redirect
  *
  * @package    quizaccess_seb
- * @author     Andrew Madden <andrewmadden@catalyst-au.net>
- * @copyright  2019 Catalyst IT
+ * @copyright  2024 Michael Kotlyar <michael.kotlyar@catalyst-eu.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
+require('../../../../config.php');
 
-$plugin->version = 2024110700;
-$plugin->requires = 2024100100;
-$plugin->component = 'quizaccess_seb';
-$plugin->maturity = MATURITY_STABLE;
+use \quizaccess_seb\continue_session;
+
+$key = required_param('key', PARAM_TEXT);
+$userid = required_param('userid', PARAM_INT);
+$cmid = required_param('cmid', PARAM_INT);
+
+// Verify and login.
+try {
+    continue_session::handle_sessionkey($key, $userid);
+} catch (exception $e) {
+    header("Location: {$CFG->wwwroot}");
+    exit;
+}
+
+redirect(new \moodle_url('/mod/quiz/accessrule/seb/config.php', ['cmid' => $cmid]));

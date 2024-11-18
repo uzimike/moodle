@@ -69,6 +69,12 @@ if ($hassiteconfig) {
         get_string('setting:displayblockswhenfinished', 'quizaccess_seb'),
         get_string('setting:displayblockswhenfinished_desc', 'quizaccess_seb'),
         '1'));
+
+    $settings->add(new admin_setting_configcheckbox('quizaccess_seb/continuesessionwhenlaunchseb',
+        get_string('setting:continuesessionwhenlaunchseb', 'quizaccess_seb'),
+        get_string('setting:continuesessionwhenlaunchseb_desc', 'quizaccess_seb'),
+        '1'));
+
 }
 
 if (has_capability('quizaccess/seb:managetemplates', context_system::instance())) {
